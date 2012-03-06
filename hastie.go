@@ -18,8 +18,8 @@ import (
 	"flag"
 	"fmt"
 	/* switched to dhconnelly fork which works with Go1
-   "github.com/russross/blackfriday" */
-  "github.com/dhconnelly/blackfriday"
+	   "github.com/russross/blackfriday" */
+	"github.com/dhconnelly/blackfriday"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -203,7 +203,7 @@ func readParseFile(filename string) (page Page) {
 		Layout:   "",
 		Date:     epoch,
 		OutFile:  filename,
-    Url:      ""}
+		Url:      ""}
 
 	// read file
 	var data, err = ioutil.ReadFile(filename)
@@ -264,10 +264,10 @@ func readParseFile(filename string) (page Page) {
 		page.OutFile = strings.Replace(page.OutFile, base[0:11], "", 1) // remove date from final filename
 	}
 
-  // add url of page, which includes initial slash
-  // this is needed to get correct links for multi 
-  // level directories 
-  page.Url = fmt.Sprintf("/%s", page.OutFile)
+	// add url of page, which includes initial slash
+	// this is needed to get correct links for multi
+	// level directories
+	page.Url = fmt.Sprintf("/%s", page.OutFile)
 
 	// convert markdown content
 	content := strings.Join(lines, "\n")
