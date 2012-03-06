@@ -30,8 +30,6 @@ Untill Go v1.0 is released you need to install Go Weekly: <http://golang.org/doc
 
 Uses **blackfriday** for markdown conversion. `go get github.com/russross/blackfriday`
 
-Uses **goconf** for reading configuration file `go get goconf.googlecode.com/hg`
-
 
 --------------------------------------------------------------------------------
 
@@ -106,12 +104,30 @@ Data available to templates:
 * Read .html files and apply template, no markdown
 * Add ability to support rss.xml
 
+
+
+
 --------------------------------------------------------------------------------
 
 ### CHANGE LOG
 
-ver 0.2
 
-* In config, renamed `template_dir` to `source` This more accurately describes the directory, what I was thinking was templates to be expanded are really the source files for the site.
 
-* Added Url parameter to templates
+ver 0.3 
+
+  * Merged Fredrik Steen changes in github.com/stone/hastie
+
+  * Switched config to json format
+    - removed dependency on old config
+
+  * Moved to Go1 support 
+
+
+
+
+ver 0.2 (unreleased)
+
+  * In config, renamed `template_dir` to `source` This more accurately describes the directory, what I was thinking was templates to be expanded are really the source files for the site.
+
+  * Added Url parameter to templates
+

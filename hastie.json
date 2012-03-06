@@ -1,5 +1,5 @@
 {
-    "TemplateDir": "posts",
-    "LayoutDir": "layouts",
-    "PublishDir": "public"
+    "SourceDir"  : "posts",
+    "LayoutDir"  : "layouts",
+    "PublishDir" : "public"
 }

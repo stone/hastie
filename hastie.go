@@ -17,7 +17,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/russross/blackfriday"
+	/* switched to dhconnelly fork which works with Go1
+   "github.com/russross/blackfriday" */
+  "github.com/dhconnelly/blackfriday"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -46,6 +48,7 @@ type Page struct {
 	Recent   PagesSlice
 	Date     time.Time
 	OutFile  string
+	Url      string
 }
 
 var config map[string]string
@@ -89,7 +92,7 @@ func main() {
 
 	setupConfig()
 
-	filepath.Walk(config["TemplateDir"], Walker)
+	filepath.Walk(config["SourceDir"], Walker)
 
 	/* ******************************************
 	 * Loop through directories and build pages 
@@ -199,7 +202,8 @@ func readParseFile(filename string) (page Page) {
 		Content:  "",
 		Layout:   "",
 		Date:     epoch,
-		OutFile:  filename}
+		OutFile:  filename,
+    Url:      ""}
 
 	// read file
 	var data, err = ioutil.ReadFile(filename)
@@ -259,6 +263,11 @@ func readParseFile(filename string) (page Page) {
 		page.Date, _ = time.Parse("2006-01-02", base[0:10])
 		page.OutFile = strings.Replace(page.OutFile, base[0:11], "", 1) // remove date from final filename
 	}
+
+  // add url of page, which includes initial slash
+  // this is needed to get correct links for multi 
+  // level directories 
+  page.Url = fmt.Sprintf("/%s", page.OutFile)
 
 	// convert markdown content
 	content := strings.Join(lines, "\n")
@@ -335,7 +344,7 @@ func setupConfig() {
 	file, err := ioutil.ReadFile(*cfgfile)
 	if err != nil {
 		// set defaults
-		config["TemplateDir"] = "posts"
+		config["SourceDir"] = "posts"
 		config["LayoutDir"] = "layouts"
 		config["PublishDir"] = "public"
 	} else {
