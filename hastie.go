@@ -33,6 +33,12 @@ const (
 	cfgFiledefault = "hastie.json"
 )
 
+// config file items
+var config struct {
+  SourceDir, LayoutDir, PublishDir string
+  CategoryMash map[string]string
+}
+
 var (
 	verbose = flag.Bool("v", false, "verbose output")
 	help    = flag.Bool("h", false, "show this help")
@@ -40,25 +46,22 @@ var (
 )
 
 type Page struct {
-	Content  string
-	Title    string
-	Category string
-	Layout   string
-	Pages    PagesSlice
-	Recent   PagesSlice
-	Date     time.Time
-	OutFile  string
-	Url      string
+	Content, Title, Category, Layout, OutFile, Url, PrevUrl, PrevTitle, NextUrl, NextTitle  string
+	Recent        PagesSlice
+	Date          time.Time
+  Categories    CategoryList
 }
 
-var config map[string]string
-
 type PagesSlice []Page
+func (p PagesSlice) Len() int               { return len(p) }
+func (p PagesSlice) Less(i, j int) bool     { return p[i].Date.Unix() < p[j].Date.Unix() }
+func (p PagesSlice) Swap(i, j int)          { p[i], p[j] = p[j], p[i] }
+func (p PagesSlice) Sort()                  { sort.Sort(p) }
+func (p PagesSlice) Limit(n int) PagesSlice { return p[0:n] }
 
-func (p PagesSlice) Len() int           { return len(p) }
-func (p PagesSlice) Less(i, j int) bool { return p[i].Date.Unix() < p[j].Date.Unix() }
-func (p PagesSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p PagesSlice) Sort()              { sort.Sort(p) }
+type CategoryList map[string]PagesSlice
+func (c CategoryList) Get(category string) PagesSlice   { return c[category] }
+
 
 // holds lists of directories and files
 var site = &SiteStruct{}
@@ -92,7 +95,7 @@ func main() {
 
 	setupConfig()
 
-	filepath.Walk(config["SourceDir"], Walker)
+	filepath.Walk(config.SourceDir, Walker)
 
 	/* ******************************************
 	 * Loop through directories and build pages 
@@ -116,6 +119,7 @@ func main() {
 			if page.Content == "" {
 				continue // skip to next file
 			}
+
 			pages = append(pages, page)
 		}
 	}
@@ -138,28 +142,27 @@ func main() {
 
 	// build recent file list, sorted
 	recentList := getRecentList(pages)
+  categoryList := getCategoryList(recentList)
+
 
 	/* ******************************************
 	 * Loop through pages and generate templates
 	 * ****************************************** */
 	for _, page := range pages {
 
-		fmt.Println("  Generating Template: ", page.OutFile)
+		Printvf("  Generating Template: ", page.OutFile)
 
-		/* Assign global data to page object
-		 * Note: need better templating duplicating data
-		         since no logic in templates to limit to 3 */
-		page.Pages = recentList
-		if len(recentList) > 3 {
-			page.Recent = recentList[0:3]
-		} else {
-			page.Recent = recentList
-		}
+    // added recent pages lists to each page object
+		page.Recent = recentList
+    page.Categories = categoryList
+
+    // add prev-next links
+    page.buildPrevNextLinks(recentList)
 
 		/* Templating - writes page data to buffer 
 		 * read and parse all template files          */
 		buffer := new(bytes.Buffer)
-		layoutsglob := fmt.Sprintf("%s/*.html", config["LayoutDir"])
+		layoutsglob := fmt.Sprintf("%s/*.html", config.LayoutDir)
 		ts, err := template.ParseGlob(layoutsglob)
 		if err != nil {
 			fmt.Println("Error Parsing Templates: ", err)
@@ -175,11 +178,11 @@ func main() {
 		ts.ExecuteTemplate(buffer, templateFile, page)
 
 		// writing out file
-		writedir := fmt.Sprintf("%s/%s", config["PublishDir"], page.Category)
+		writedir := fmt.Sprintf("%s/%s", config.PublishDir, page.Category)
 		Printvln(" Write Directory:", writedir)
 		os.MkdirAll(writedir, 0755) // does nothing if already exists
 
-		outfile := fmt.Sprintf("%s/%s", config["PublishDir"], page.OutFile)
+		outfile := fmt.Sprintf("%s/%s", config.PublishDir, page.OutFile)
 		Printvln(" Writing File:", outfile)
 		ioutil.WriteFile(outfile, []byte(buffer.String()), 0644)
 	}
@@ -197,13 +200,17 @@ func readParseFile(filename string) (page Page) {
 
 	// setup default page struct
 	page = Page{
-		Title:    "",
-		Category: "",
-		Content:  "",
-		Layout:   "",
-		Date:     epoch,
-		OutFile:  filename,
-		Url:      ""}
+		Title:     "",
+		Category:  "",
+		Content:   "",
+		Layout:    "",
+		Date:      epoch,
+		OutFile:   filename,
+    Url:       "",
+    PrevUrl:   "",
+    PrevTitle: "",
+    NextUrl:   "",
+    NextTitle: ""}
 
 	// read file
 	var data, err = ioutil.ReadFile(filename)
@@ -224,6 +231,7 @@ func readParseFile(filename string) (page Page) {
 			if colonIndex > 0 {
 				key := strings.TrimSpace(line[:colonIndex])
 				value := strings.TrimSpace(line[colonIndex+1:])
+        value = strings.Trim(value, "\"")  //remove quotes
 				switch key {
 				case "title":
 					page.Title = value
@@ -252,9 +260,10 @@ func readParseFile(filename string) (page Page) {
 	page.OutFile = filename[strings.Index(filename, "/")+1:]
 	page.OutFile = strings.Replace(page.OutFile, ".md", ".html", 1)
 
-	// next first directory is category
+	// next directory(s) category, category includes sub-dir = solog/webdev
+  // TODO: allow category parameter
 	if strings.Contains(page.OutFile, "/") {
-		page.Category = page.OutFile[0:strings.Index(page.OutFile, "/")]
+		page.Category = page.OutFile[0:strings.LastIndex(page.OutFile, "/")]
 	}
 
 	// parse date from filename
@@ -284,7 +293,7 @@ func readParseFile(filename string) (page Page) {
  *    - does not include files without date
  * ************************************************ */
 func getRecentList(pages PagesSlice) (list PagesSlice) {
-	fmt.Println("Creating Recent File List")
+	Printvf("Creating Recent File List")
 	for _, page := range pages {
 		// pages without dates are set to epoch
 		if page.Date.Format("2006") != "1970" {
@@ -300,6 +309,75 @@ func getRecentList(pages PagesSlice) (list PagesSlice) {
 
 	return list
 }
+
+
+/* ************************************************
+ * Build Category List
+ *    - return a map containing a list of pages for
+        each category, the key being category name
+ * ************************************************ */
+func getCategoryList(pages PagesSlice) CategoryList {
+  mapList := make(CategoryList)
+  // recentList is passed in which is already sorted
+  // just need to map the pages to category
+
+  // read category mash config, which allows to create
+  // a new category based on combining multiple categories
+  // this is used on my site when I want to display a list 
+  // of items from similar categories together
+  reverseMap := make(map[string]string)
+
+  for k,v := range config.CategoryMash {
+    //split v on comma
+    cats := strings.Split(string(v), ",")
+    //loop through split and add to reverse map
+    for _,cat := range cats {
+      reverseMap[cat] = string(k)
+    }
+  }
+
+  for _, page := range pages {
+
+    // create new category from category mash map
+    if reverseMap[page.Category] != page.Category {
+      thisCategory := reverseMap[page.Category]
+      mapList[thisCategory] = append(mapList[thisCategory], page) 
+    }
+    // still want a list of regular categories
+    mapList[page.Category] = append(mapList[page.Category],page)
+  }
+	return mapList
+}
+
+
+
+/* ************************************************
+ * Add Prev Next Links to Page Object 
+ * ************************************************ */
+func (page *Page) buildPrevNextLinks(recentList PagesSlice) {
+    foundIt := false
+    nextPage := Page{}
+    prevPage := Page{}
+    pp := Page{}
+    for _, rp := range recentList {
+
+      if foundIt {
+        prevPage = rp
+        break
+      }
+
+      if (rp.Title == page.Title) {
+        nextPage = pp
+        foundIt = true
+      }
+      pp = rp   // previous page
+    }
+    page.NextUrl = nextPage.Url
+    page.NextTitle = nextPage.Title
+    page.PrevUrl = prevPage.Url
+    page.PrevTitle = prevPage.Title
+}
+
 
 // Holds lists of Files, Directories and Categories
 type SiteStruct struct {
@@ -344,9 +422,9 @@ func setupConfig() {
 	file, err := ioutil.ReadFile(*cfgfile)
 	if err != nil {
 		// set defaults
-		config["SourceDir"] = "posts"
-		config["LayoutDir"] = "layouts"
-		config["PublishDir"] = "public"
+		config.SourceDir = "posts"
+		config.LayoutDir = "layouts"
+		config.PublishDir = "public"
 	} else {
 		if err := json.Unmarshal(file, &config); err != nil {
 			fmt.Printf("Error parsing config: %s", err)
